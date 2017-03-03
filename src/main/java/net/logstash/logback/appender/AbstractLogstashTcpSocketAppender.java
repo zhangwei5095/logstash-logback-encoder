@@ -39,6 +39,7 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
+import net.logstash.logback.Logback11Support;
 import net.logstash.logback.encoder.SeparatorParser;
 
 import org.codehaus.mojo.animal_sniffer.IgnoreJRERequirement;
@@ -317,7 +318,7 @@ public abstract class AbstractLogstashTcpSocketAppender<Event extends DeferredPr
         
         /**
          * When run, if the {@link AbstractLogstashTcpSocketAppender#keepAliveDuration}
-         * has elasped since the last event was sent,
+         * has elapsed since the last event was sent,
          * then this runnable will publish a keepAlive event to the ringBuffer.
          * <p>
          * The runnable will reschedule itself to execute in the future
@@ -326,7 +327,7 @@ public abstract class AbstractLogstashTcpSocketAppender<Event extends DeferredPr
          * 
          * When the keepAlive event is processed by the event handler,
          * if the {@link AbstractLogstashTcpSocketAppender#keepAliveDuration}
-         * has elasped since the last event was sent,
+         * has elapsed since the last event was sent,
          * then the event handler will send the {@link AbstractLogstashTcpSocketAppender#keepAliveMessage}
          * to the socket outputstream.
          *
@@ -438,7 +439,11 @@ public abstract class AbstractLogstashTcpSocketAppender<Event extends DeferredPr
                          * This is a standard (non-keepAlive) event.
                          * Therefore, we need to send the event.
                          */
-                        encoder.doEncode(logEvent.event);
+                        if (Logback11Support.isLogback11OrBefore()) {
+                            Logback11Support.doEncode(encoder, logEvent.event);
+                        } else {
+                            outputStream.write(encoder.encode(logEvent.event));
+                        }
                     } else if (hasKeepAliveDurationElapsed(lastSentTimestamp, currentTime)){
                         /*
                          * This is a keep alive event, and the keepAliveDuration has passed,
@@ -536,7 +541,9 @@ public abstract class AbstractLogstashTcpSocketAppender<Event extends DeferredPr
                     tempSocket.connect(new InetSocketAddress(getHostString(currentDestination), currentDestination.getPort()), acceptConnectionTimeout);
                     tempOutputStream = new BufferedOutputStream(tempSocket.getOutputStream(), writeBufferSize);
                     
-                    encoder.init(tempOutputStream);
+                    if (Logback11Support.isLogback11OrBefore()) {
+                        Logback11Support.init(encoder, tempOutputStream);
+                    }
                     
                     addInfo(peerId + "connection established.");
                     
@@ -634,11 +641,13 @@ public abstract class AbstractLogstashTcpSocketAppender<Event extends DeferredPr
         }
         
         private void closeEncoder() {
-            try {
-                encoder.close();
-            } catch (IOException ioe) {
-                addStatus(new ErrorStatus(
-                        "Failed to close encoder", this, ioe));
+            if (Logback11Support.isLogback11OrBefore()) {
+                try {
+                    Logback11Support.close(encoder);
+                } catch (IOException ioe) {
+                    addStatus(new ErrorStatus(
+                            "Failed to close encoder", this, ioe));
+                }
             }
             
             encoder.stop();
